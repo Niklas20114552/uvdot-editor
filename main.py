@@ -1,30 +1,77 @@
-import sys, re, json, pyperclip, os
+import json
+import os
+import pyperclip
+import re
+import sys
+
 from PyQt6.QtGui import QFont
-from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QLabel, QTextEdit, QPushButton, QHBoxLayout, QSizePolicy, QTabWidget, QFileDialog, QTableWidget, QTableWidgetItem, QRadioButton
+from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QLabel, QTextEdit, QPushButton, \
+    QHBoxLayout, QSizePolicy, QTabWidget, QFileDialog, QTableWidget, QTableWidgetItem, QRadioButton, QDialog
 from chompjs import parse_js_object
 
 network_files: dict = {}
 st_mode: bool = False
 
+
+def replace_dict_entry_at_index(d: dict, index: int, new_key: str, new_value: str) -> dict:
+    items = list(d.items())
+    items[index] = (new_key, new_value)
+    return dict(items)
+
+
 class MethodTabs(QWidget):
     def __init__(self):
         super().__init__()
+        self.dont_update = False
+
         self.layout = QVBoxLayout()
         self.setLayout(self.layout)
 
         self.table = QTableWidget()
         self.table.verticalHeader().setVisible(False)
-
+        self.table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.table.setColumnCount(4)
         self.table.setHorizontalHeaderLabels(['Name', 'BG-Color', 'FG-Color', 'Operator'])
+        self.table.itemChanged.connect(self.process_update)
 
         self.layout.addWidget(self.table)
 
         self.update_table()
 
-        self.table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+    def process_update(self, item: QTableWidgetItem):
+        if self.dont_update:
+            return
+        index = self.table.item(item.row(), 0).text()
+        if item.column() == 0:
+            dict_index = item.row()
+            old_name = tuple(network_files['methodMetadata'].keys())[dict_index]
+            if item.text().strip() == '':
+                network_files['methodMetadata'].pop(tuple(network_files['methodMetadata'].keys())[dict_index])
+            else:
+                network_files['methodMetadata'] = replace_dict_entry_at_index(network_files['methodMetadata'],
+                                                                              dict_index,
+                                                                              item.text(),
+                                                                              network_files['methodMetadata'][old_name])
+        elif item.column() == 1:
+            if item.text().strip() == '':
+                item.setText(network_files['methodMetadata'][index]['color'][0])
+            else:
+                network_files['methodMetadata'][index]['color'][0] = item.text()
+        elif item.column() == 2:
+            if item.text().strip() == '':
+                item.setText(network_files['methodMetadata'][index]['color'][1])
+            else:
+                network_files['methodMetadata'][index]['color'][1] = item.text()
+        elif item.column() == 3:
+            if item.text().strip() == '':
+                item.setText(network_files['methodMetadata'][index]['operator'])
+            else:
+                network_files['methodMetadata'][index]['operator'] = item.text()
+        self.update_table()
 
     def update_table(self):
+        self.dont_update = True
+
         self.table.setRowCount(len(network_files['methodMetadata']))
         for row, name in enumerate(network_files['methodMetadata']):
             name_cell = QTableWidgetItem(name)
@@ -38,6 +85,8 @@ class MethodTabs(QWidget):
             self.table.setItem(row, 3, operator_cell)
             self.table.resizeColumnsToContents()
             self.table.resizeRowsToContents()
+
+        self.dont_update = False
 
 
 def get_traveltimes(stations: list[str], st_string: dict) -> int:
@@ -83,60 +132,94 @@ def convert_st_uvdot(st_string: dict) -> tuple:
     return places, methodMetadata, routes
 
 
+class CloseDialog(QDialog):
+    def __init__(self):
+        super().__init__()
+        self.cancelled = False
+        self.layout = QVBoxLayout()
+        self.button_layout = QHBoxLayout()
+        self.setLayout(self.layout)
+
+        self.layout.addWidget(QLabel('Do you want to export the network before closing?'))
+        self.yes = QPushButton('Yes')
+        self.no = QPushButton('No')
+        self.cancel = QPushButton('Cancel')
+
+        self.yes.clicked.connect(self.accept)
+        self.no.clicked.connect(self.reject)
+        self.cancel.clicked.connect(self.do_cancel)
+
+        self.button_layout.addWidget(self.yes)
+        self.button_layout.addWidget(self.no)
+        self.button_layout.addWidget(self.cancel)
+        self.layout.addLayout(self.button_layout)
+
+    def do_cancel(self):
+        self.cancelled = True
+        self.reject()
+
+
+def create_export() -> str:
+    export = ''
+
+    for file in network_files:
+        export += f'const {file} = {json.dumps(network_files[file])};\n\n'
+    export.removesuffix('\n')
+    return export
+
+
+def create_st_export() -> str:
+    export = ''
+
+    # We need the platform. The platform is not being converted. So please store it somewhere else if st_mode is enabled.
+    return export
+
+
 class Application(QMainWindow):
 
     def process_input(self, inputstr: str) -> None:
         global network_files
         global st_mode
         network_files = {}
-        pattern = re.compile(r'^(?:const|let|var) (network|places|methodMetadata|routes) = ({(?:[^;]|\n)*});$', re.MULTILINE)
+        pattern = re.compile(r'^(?:const|let|var) (network|places|methodMetadata|routes) = ({(?:[^;]|\n)*});$',
+                             re.MULTILINE)
 
         matches = re.finditer(pattern, inputstr)
         for match in matches:
             if match.groups()[0] == 'network':
                 print('[D> ST Network detected')
-                network_files['places'], network_files['methodMetadata'], network_files['routes'] = convert_st_uvdot(parse_js_object(match.groups()[1]))
+                network_files['places'], network_files['methodMetadata'], network_files['routes'] = convert_st_uvdot(
+                    parse_js_object(match.groups()[1]))
                 st_mode = True
             else:
                 print(f'[D> UVDOT Network variable detected ({match.groups()[0]})')
                 st_mode = False
                 network_files[match.groups()[0]] = parse_js_object(match.groups()[1])
 
-
     def __init__(self):
         super().__init__()
+        self.only_export_mode = False
 
         self.setWindowTitle('UVDOT Editor')
         self.create_import_page()
-        self.showMaximized()
-
-    def create_export(self) -> str:
-        export = ''
-
-        for file in network_files:
-            export += f'const {file} = {json.dumps(network_files[file])};\n\n'
-        export.removesuffix('\n')
-        return export
-
-    def create_st_export(self) -> str:
-        export = ''
-
-        # We need the platform. The platform is not being converted. So please store it somewhere else if st_mode is enabled.
-        return export
 
     def create_import_page(self):
+        self.only_export_mode = True
         def input_js(text: str):
             global network_files
             self.process_input(text)
             if ('routes' and 'methodMetadata' and 'places') in network_files:
+                self.only_export_mode = False
                 self.create_main_page()
             else:
                 subtitle.setText('Failed to import either as ST or UVDOT file! Please check the file and try again!')
 
         def process_input():
             input_js(editbox.toPlainText())
+
         def open_file():
-            file_name, _ = QFileDialog.getOpenFileName(self, 'Open network.js or data.js', os.path.expanduser('~'), 'network.js or data.js (*.js)')
+            file_name, _ = QFileDialog.getOpenFileName(self, 'Open network.js or data.js', os.path.expanduser('~'),
+                                                       'Network file (*.js)')
             if file_name:
                 with open(file_name, 'r') as f:
                     input_js(f.read())
@@ -168,20 +251,42 @@ class Application(QMainWindow):
 
     def create_export_page(self):
         def prepare_export():
-            copy_button.clicked.disconnect()
             if st_export.isChecked():
-                export = self.create_st_export()
+                export_area.setPlainText(create_st_export())
             else:
-                export = self.create_export()
-            export_area.setPlainText(export)
-            copy_button.clicked.connect(lambda: pyperclip.copy(export))
+                export_area.setPlainText(create_export())
+
+        def copy_export():
+            if st_export.isChecked():
+                pyperclip.copy(create_st_export())
+            else:
+                pyperclip.copy(create_export())
+            if self.only_export_mode:
+                self.close()
+
+        def saveas():
+            file_path, _ = QFileDialog.getSaveFileName(self, 'Save script as...', os.path.expanduser('~'),
+                                                       'JavaScript network file (*.js')
+            with open(file_path, 'w') as f:
+                if st_export.isChecked():
+                    f.write(create_st_export())
+                else:
+                    f.write(create_export())
+            if self.only_export_mode:
+                self.close()
+
+        def goback():
+            if self.only_export_mode:
+                self.close()
+            else:
+                self.create_main_page()
 
         widget = QWidget()
         layout = QVBoxLayout()
 
         title_layout = QHBoxLayout()
         back_button = QPushButton('&Back')
-        back_button.clicked.connect(self.create_main_page)
+        back_button.clicked.connect(goback)
         back_button.setFixedWidth(50)
         title = QLabel('Export network')
         title.setFont(QFont(title.font().family(), 14))
@@ -196,6 +301,10 @@ class Application(QMainWindow):
         uvdot_export = QRadioButton('&UVDOT-Mode')
 
         copy_button = QPushButton('&Copy to clipboard')
+        copy_button.clicked.connect(copy_export)
+
+        save_button = QPushButton('&Save as...')
+        save_button.clicked.connect(saveas)
 
         uvdot_export.setDisabled(st_mode)
         uvdot_export.setChecked(not st_mode)
@@ -249,6 +358,19 @@ class Application(QMainWindow):
 
         widget.setLayout(layout)
         self.setCentralWidget(widget)
+
+    def closeEvent(self, a0):
+        if self.only_export_mode:
+            return super().closeEvent(a0)
+        dialog = CloseDialog()
+        if dialog.exec():
+            self.only_export_mode = True
+            self.create_export_page()
+            return a0.ignore()
+        elif dialog.cancelled:
+            return a0.ignore()
+        else:
+            super().closeEvent(a0)
 
 
 def main():
