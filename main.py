@@ -1,12 +1,14 @@
 import json
 import os
-import pyperclip
 import re
 import sys
 
+import pyperclip
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QLabel, QTextEdit, QPushButton, \
-    QHBoxLayout, QSizePolicy, QTabWidget, QFileDialog, QTableWidget, QTableWidgetItem, QRadioButton, QDialog
+    QHBoxLayout, QSizePolicy, QTabWidget, QFileDialog, QTableWidget, QTableWidgetItem, QRadioButton, QDialog, QGroupBox, \
+    QLineEdit
 from chompjs import parse_js_object
 
 network_files: dict = {}
@@ -21,6 +23,21 @@ def replace_dict_entry_at_index(d: dict, index: int, new_key: str, new_value: st
 
 class MethodTabs(QWidget):
     def __init__(self):
+        def update_bg():
+            if self.add_name.text().startswith('USTe '):
+                self.add_button.setDisabled(False)
+                self.add_bg.setText('#066b5f')
+            elif self.add_name.text().startswith('UST '):
+                self.add_button.setDisabled(False)
+                self.add_bg.setText('#6b006b')
+            else:
+                self.add_button.setDisabled(True)
+                self.add_bg.setText('')
+
+        def check_button():
+            self.add_button.setDisabled(
+                not (self.add_name.text() and self.add_bg.text() and self.add_fg.text() and self.add_op.text()))
+
         super().__init__()
         self.dont_update = False
 
@@ -38,6 +55,51 @@ class MethodTabs(QWidget):
 
         self.update_table()
 
+        self.add_box = QGroupBox('Add method')
+        self.add_layout = QHBoxLayout()
+        self.add_box.setLayout(self.add_layout)
+
+        self.add_name = QLineEdit()
+        self.add_bg = QLineEdit()
+        self.add_fg = QLineEdit()
+        self.add_op = QLineEdit()
+        self.add_button = QPushButton('Add method')
+        self.add_button.setFixedWidth(100)
+
+        self.add_name.setPlaceholderText('Method name')
+        self.add_bg.setPlaceholderText('Background color')
+        self.add_fg.setPlaceholderText('Foreground color')
+        self.add_op.setPlaceholderText('Operator')
+        if st_mode:
+            self.add_name.textChanged.connect(update_bg)
+            self.add_bg.setDisabled(True)
+            self.add_fg.setDisabled(True)
+            self.add_op.setDisabled(True)
+            self.add_button.setDisabled(True)
+            self.add_fg.setText('white')
+            self.add_op.setText('Seacrestica Transports Outpost')
+        else:
+            self.add_name.textChanged.connect(check_button)
+            self.add_bg.textChanged.connect(check_button)
+            self.add_fg.textChanged.connect(check_button)
+            self.add_op.textChanged.connect(check_button)
+
+        self.add_button.clicked.connect(self.add_method)
+
+        self.add_layout.addWidget(self.add_name)
+        self.add_layout.addWidget(self.add_bg)
+        self.add_layout.addWidget(self.add_fg)
+        self.add_layout.addWidget(self.add_op)
+        self.add_layout.addWidget(self.add_button)
+
+        self.layout.addWidget(self.add_box)
+        check_button()
+
+    def add_method(self):
+        network_files['methodMetadata'][self.add_name.text()] = {'color': [self.add_bg.text(), self.add_fg.text()],
+                                                                 'operator': self.add_op.text()}
+        self.update_table()
+
     def process_update(self, item: QTableWidgetItem):
         if self.dont_update:
             return
@@ -45,18 +107,40 @@ class MethodTabs(QWidget):
         if item.column() == 0:
             dict_index = item.row()
             old_name = tuple(network_files['methodMetadata'].keys())[dict_index]
-            if item.text().strip() == '':
-                network_files['methodMetadata'].pop(tuple(network_files['methodMetadata'].keys())[dict_index])
+            if st_mode:
+                if item.text().startswith('USTe '):
+                    network_files['methodMetadata'][old_name]['color'][0] = '#066b5f'
+                    network_files['methodMetadata'] = replace_dict_entry_at_index(network_files['methodMetadata'],
+                                                                                  dict_index,
+                                                                                  item.text(),
+                                                                                  network_files['methodMetadata'][
+                                                                                      old_name])
+                elif item.text().startswith('UST '):
+                    network_files['methodMetadata'][old_name]['color'][0] = '#6b006b'
+                    network_files['methodMetadata'] = replace_dict_entry_at_index(network_files['methodMetadata'],
+                                                                                  dict_index,
+                                                                                  item.text(),
+                                                                                  network_files['methodMetadata'][
+                                                                                      old_name])
+                elif item.text().strip() == '':
+                    network_files['methodMetadata'].pop(tuple(network_files['methodMetadata'].keys())[dict_index])
+                else:
+                    item.setText(old_name)
             else:
-                network_files['methodMetadata'] = replace_dict_entry_at_index(network_files['methodMetadata'],
-                                                                              dict_index,
-                                                                              item.text(),
-                                                                              network_files['methodMetadata'][old_name])
+                if item.text().strip() == '':
+                    network_files['methodMetadata'].pop(tuple(network_files['methodMetadata'].keys())[dict_index])
+                else:
+                    network_files['methodMetadata'] = replace_dict_entry_at_index(network_files['methodMetadata'],
+                                                                                  dict_index,
+                                                                                  item.text(),
+                                                                                  network_files['methodMetadata'][
+                                                                                      old_name])
         elif item.column() == 1:
             if item.text().strip() == '':
                 item.setText(network_files['methodMetadata'][index]['color'][0])
             else:
                 network_files['methodMetadata'][index]['color'][0] = item.text()
+
         elif item.column() == 2:
             if item.text().strip() == '':
                 item.setText(network_files['methodMetadata'][index]['color'][1])
@@ -78,6 +162,10 @@ class MethodTabs(QWidget):
             bg_cell = QTableWidgetItem(network_files['methodMetadata'][name]['color'][0])
             fg_cell = QTableWidgetItem(network_files['methodMetadata'][name]['color'][1])
             operator_cell = QTableWidgetItem(network_files['methodMetadata'][name]['operator'])
+            if st_mode:
+                bg_cell.setFlags(bg_cell.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+                fg_cell.setFlags(fg_cell.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+                operator_cell.setFlags(operator_cell.flags() & ~Qt.ItemFlag.ItemIsEnabled)
 
             self.table.setItem(row, 0, name_cell)
             self.table.setItem(row, 1, bg_cell)
@@ -141,9 +229,9 @@ class CloseDialog(QDialog):
         self.setLayout(self.layout)
 
         self.layout.addWidget(QLabel('Do you want to export the network before closing?'))
-        self.yes = QPushButton('Yes')
-        self.no = QPushButton('No')
-        self.cancel = QPushButton('Cancel')
+        self.yes = QPushButton('&Yes')
+        self.no = QPushButton('&No')
+        self.cancel = QPushButton('&Cancel')
 
         self.yes.clicked.connect(self.accept)
         self.no.clicked.connect(self.reject)
@@ -202,9 +290,11 @@ class Application(QMainWindow):
 
         self.setWindowTitle('UVDOT Editor')
         self.create_import_page()
+        self.setMinimumSize(800, 600)
 
     def create_import_page(self):
         self.only_export_mode = True
+
         def input_js(text: str):
             global network_files
             self.process_input(text)
@@ -334,7 +424,7 @@ class Application(QMainWindow):
         title = QLabel()
         title.setFont(QFont(title.font().family(), 14))
         if st_mode:
-            title.setText('Seacrestica Transport Network')
+            title.setText('Seacrestica Transports Network')
         else:
             title.setText('UltraVanilla Department of Transportation Network')
 
