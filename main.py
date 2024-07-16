@@ -4,11 +4,9 @@ import re
 import sys
 
 import pyperclip
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont
-from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QLabel, QTextEdit, QPushButton, \
-    QHBoxLayout, QSizePolicy, QTabWidget, QFileDialog, QTableWidget, QTableWidgetItem, QRadioButton, QDialog, QGroupBox, \
-    QLineEdit
+from PyQt6.QtCore import *
+from PyQt6.QtGui import *
+from PyQt6.QtWidgets import *
 from chompjs import parse_js_object
 
 network_files: dict = {}
@@ -20,8 +18,15 @@ def replace_dict_entry_at_index(d: dict, index: int, new_key: str, new_value: st
     items[index] = (new_key, new_value)
     return dict(items)
 
+class PlacesTab(QWidget):
+    def __init__(self) -> None:
+        super().__init__()
 
-class MethodTabs(QWidget):
+class NodesTab(QWidget):
+    def __init__(self) -> None:
+        super().__init__()      
+        
+class MethodsTab(QWidget):
     def __init__(self):
         def update_bg():
             if self.add_name.text().startswith('USTe '):
@@ -48,7 +53,7 @@ class MethodTabs(QWidget):
         self.table.verticalHeader().setVisible(False)
         self.table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.table.setColumnCount(4)
-        self.table.setHorizontalHeaderLabels(['Name', 'BG-Color', 'FG-Color', 'Operator'])
+        self.table.setHorizontalHeaderLabels(['Name', 'BG-Color', 'FG-Color', 'Operator', 'Transfer?'])
         self.table.itemChanged.connect(self.process_update)
 
         self.layout.addWidget(self.table)
@@ -154,27 +159,39 @@ class MethodTabs(QWidget):
         self.update_table()
 
     def update_table(self):
-        self.dont_update = True
+        try:
+            self.dont_update = True
 
-        self.table.setRowCount(len(network_files['methodMetadata']))
-        for row, name in enumerate(network_files['methodMetadata']):
-            name_cell = QTableWidgetItem(name)
-            bg_cell = QTableWidgetItem(network_files['methodMetadata'][name]['color'][0])
-            fg_cell = QTableWidgetItem(network_files['methodMetadata'][name]['color'][1])
-            operator_cell = QTableWidgetItem(network_files['methodMetadata'][name]['operator'])
-            if st_mode:
-                bg_cell.setFlags(bg_cell.flags() & ~Qt.ItemFlag.ItemIsEnabled)
-                fg_cell.setFlags(fg_cell.flags() & ~Qt.ItemFlag.ItemIsEnabled)
-                operator_cell.setFlags(operator_cell.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+            self.table.setRowCount(len(network_files['methodMetadata']))
+            for row, name in enumerate(network_files['methodMetadata']):
+                name_cell = QTableWidgetItem(name)
+                bg_cell = QTableWidgetItem(network_files['methodMetadata'][name]['color'][0])
+                fg_cell = QTableWidgetItem(network_files['methodMetadata'][name]['color'][1])
+                operator_cell = QTableWidgetItem(network_files['methodMetadata'][name]['operator'])
+                #transfer_checkbox = QCheckBox()
+                #transfer_checkbox.setChecked(name in network_files['transfers'])
+                #transfer_cell = QTableWidgetItem(transfer_checkbox)
+                if st_mode:
+                    bg_cell.setFlags(bg_cell.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+                    fg_cell.setFlags(fg_cell.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+                    operator_cell.setFlags(operator_cell.flags() & ~Qt.ItemFlag.ItemIsEnabled)
 
-            self.table.setItem(row, 0, name_cell)
-            self.table.setItem(row, 1, bg_cell)
-            self.table.setItem(row, 2, fg_cell)
-            self.table.setItem(row, 3, operator_cell)
-            self.table.resizeColumnsToContents()
-            self.table.resizeRowsToContents()
-
-        self.dont_update = False
+                self.table.setItem(row, 0, name_cell)
+                self.table.setItem(row, 1, bg_cell)
+                self.table.setItem(row, 2, fg_cell)
+                self.table.setItem(row, 3, operator_cell)
+                #self.table.setItem(row, 4, transfer_cell)
+                self.table.resizeColumnsToContents()
+                self.table.resizeRowsToContents()
+        except Exception as e:
+            network_files['places'] = {}
+            network_files['transfers'] = {}
+            network_files['methodMetadata'] = {}
+            network_files['routes'] = {}
+            
+            print(f"[D> An error occurred during table update: {e}")
+        finally:
+            self.dont_update = False
 
 
 def get_traveltimes(stations: list[str], st_string: dict) -> int:
@@ -227,6 +244,7 @@ class CloseDialog(QDialog):
         self.layout = QVBoxLayout()
         self.button_layout = QHBoxLayout()
         self.setLayout(self.layout)
+        self.setWindowTitle("Quit?")
 
         self.layout.addWidget(QLabel('Do you want to export the network before closing?'))
         self.yes = QPushButton('&Yes')
@@ -269,7 +287,8 @@ class Application(QMainWindow):
         global network_files
         global st_mode
         network_files = {}
-        pattern = re.compile(r'^(?:const|let|var) (network|places|methodMetadata|routes) = ({(?:[^;]|\n)*});$',
+        # UVDOT uses exports, dont look at the start of the string, look anywhere
+        pattern = re.compile(r'(?:const|let|var) (network|places|methodMetadata|routes|transfers) = ((?:{|\[)(?:[^;]|\n)*(?:}|\]));$',
                              re.MULTILINE)
 
         matches = re.finditer(pattern, inputstr)
@@ -280,7 +299,7 @@ class Application(QMainWindow):
                     parse_js_object(match.groups()[1]))
                 st_mode = True
             else:
-                print(f'[D> UVDOT Network variable detected ({match.groups()[0]})')
+                print(f'[D> UVDOT Network detected ({match.groups()[0]})')
                 st_mode = False
                 network_files[match.groups()[0]] = parse_js_object(match.groups()[1])
 
@@ -307,35 +326,55 @@ class Application(QMainWindow):
         def process_input():
             input_js(editbox.toPlainText())
 
-        def open_file():
-            file_name, _ = QFileDialog.getOpenFileName(self, 'Open network.js or data.js', os.path.expanduser('~'),
+        def open_file_picker():
+            file_name, _ = QFileDialog.getOpenFileName(self, 'Open network.js or data.ts', os.path.expanduser('~'),
                                                        'Network file (*.js)')
             if file_name:
                 with open(file_name, 'r') as f:
                     input_js(f.read())
+                    
+        def open_local_file():
+            try:
+                with open("./data.ts", 'r') as f:
+                    input_js(f.read())
+            except:
+                try:
+                    with open("./network.js", 'r') as f:
+                        input_js(f.read())
+                except:
+                    subtitle.setText('Failed to import a local file! Please check if netowkr.js or data.ts exists in the current directory and try again!')
+                
+        def skip_import():
+            self.create_main_page()
 
         widget = QWidget()
         layout = QVBoxLayout()
 
         title = QLabel('Welcome to UVDOT Editor!')
         title.setFont(QFont(title.font().family(), 14))
-        subtitle = QLabel('Please import a ST network.js or a UVDOT data.js file.')
+        subtitle = QLabel('Please import a ST network.js or a UVDOT data.ts file.')
         editbox = QTextEdit()
         editbox.setPlaceholderText("Enter your file's content here")
         editbox.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         editbox.setFont(QFont('monospace', 10))
         submit_button = QPushButton('&Import')
         open_file_button = QPushButton('&Open file')
+        auto_file_button = QPushButton('&Auto-detect file')
+        skip_import_button = QPushButton('&Skip Importing')
 
         submit_button.clicked.connect(process_input)
-        open_file_button.clicked.connect(open_file)
+        open_file_button.clicked.connect(open_file_picker)
+        auto_file_button.clicked.connect(open_local_file)
+        skip_import_button.clicked.connect(skip_import)
 
         layout.addWidget(title)
         layout.addWidget(subtitle)
         layout.addWidget(editbox)
         layout.addWidget(submit_button)
         layout.addWidget(open_file_button)
-
+        layout.addWidget(auto_file_button)
+        layout.addWidget(skip_import_button)
+        
         widget.setLayout(layout)
         self.setCentralWidget(widget)
 
@@ -434,7 +473,9 @@ class Application(QMainWindow):
         import_button.setFixedWidth(50)
         # Do different options with tabs
         tab_bar = QTabWidget()
-        tab_bar.addTab(MethodTabs(), "Methods")
+        tab_bar.addTab(MethodsTab(), "Methods")
+        tab_bar.addTab(NodesTab(), "Nodes")
+        tab_bar.addTab(PlacesTab(), "Places")
 
         title_layout.addWidget(export_button)
         title_layout.addWidget(import_button)
