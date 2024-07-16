@@ -87,7 +87,10 @@ class PlacesTab(QWidget):
             self.table.setRowCount(network_files.get_place_len())
             for row, name in enumerate(network_files.get_places()):
                 name_cell = QTableWidgetItem(name)
-                loc_cell = QTableWidgetItem(network_files.get_location_place(name))
+                if network_files.st_mode:
+                    loc_cell = QTableWidgetItem('')
+                else:
+                    loc_cell = QTableWidgetItem(network_files.get_location_place(name))
                 if network_files.st_mode:
                     loc_cell.setFlags(loc_cell.flags() & ~Qt.ItemFlag.ItemIsEnabled)
 
