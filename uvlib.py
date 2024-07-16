@@ -22,6 +22,12 @@ class NetworkFiles:
                 if not lines['stations'].index(cstation) + 1 == len(lines['stations']):
                     return lines['stations'][lines['stations'].index(cstation) + 1]
 
+    def replace_ust(self, string: str):
+        return string.replace('UltraStar express', 'USTe').replace('UltraStar', 'UST')
+
+    def replace_ultrastar(self, string: str):
+        return string.replace('USTe', 'UltraStar express').replace('UST', 'UltraStar')
+
     def convert_st_uvdot(self, st_string: dict) -> tuple:
         print('[D> Converting ST Network...')
         places = {}
@@ -36,7 +42,7 @@ class NetworkFiles:
                 if next_station:
                     stations = [station['name'], next_station]
                     routes[station['name']][1]['railways'][next_station] = [
-                        [line['name'].replace('USTe', 'UltraStar express').replace('UST', 'UltraStar')],
+                        [self.replace_ultrastar(line['name'])],
                         self.get_traveltimes(stations, st_string) * 8,
                         {'currency': 'Emerald', 'price': 4, 'pass': 'SeaCard', 'passPrice': 2}]
 
@@ -52,11 +58,12 @@ class NetworkFiles:
     def process_file(self, inputstr: str):
         self.network_files: dict = {}
         pattern = re.compile(
-            r'(?:const|let|var) (network|places|methodMetadata|routes|transfers) = ((?:{|\[)(?:[^;]|\n)*(?:}|\]));$',
+            r'(?:const|let|var) (network|places|methodMetadata|routes|transfers) = ([{\[](?:[^;]|\n)*[}\]]);$',
             re.MULTILINE)
 
         matches = re.finditer(pattern, inputstr)
         for match in matches:
+            self.network_files[match.groups()[0]] = parse_js_object(match.groups()[1])
             if match.groups()[0] == 'network':
                 print('[D> ST Network detected')
                 self.network_files['places'], self.network_files['methodMetadata'], self.network_files[
@@ -65,7 +72,6 @@ class NetworkFiles:
             else:
                 print(f'[D> UVDOT Network detected ({match.groups()[0]})')
                 self.st_mode = False
-                self.network_files[match.groups()[0]] = parse_js_object(match.groups()[1])
 
     def replace_dict_entry_at_index(self, d: dict, index: int, new_key: str, new_value: str) -> dict:
         items = list(d.items())
@@ -156,8 +162,66 @@ class NetworkFiles:
         export.removesuffix('\n')
         return export
 
-    def create_st_export(self) -> str:
-        export = ''
+    def convert_uvdot_st(self, uvdot_str: dict) -> dict:
+        network = {'lines': [], 'stations': [], 'doublelines': [], 'traveltimes': []}
+        lines = {}
+        stations = []
+        
+        for route in uvdot_str['routes']:
+            if 'railways' in uvdot_str['routes'][route][1]:
+                stations.append(route)
+                for next_stop in uvdot_str['routes'][route][1]['railways']:
+                    line_connection = uvdot_str['routes'][route][1]['railways'][next_stop]
+                    if line_connection[0][0] not in lines:
+                        lines[line_connection[0][0]] = {'start-stations': [], 'stop-stations': []}
+                    lines[line_connection[0][0]]['start-stations'].append(route)
+                    lines[line_connection[0][0]]['stop-stations'].append(next_stop)
 
-        # We need the platform. The platform is not being converted. So please store it somewhere else if st_mode is enabled.
-        return export
+                    t_stations = [route, next_stop]
+                    t_stations.sort()
+                    t_time = {'start': t_stations[0], 'end': t_stations[1], 'time': round(line_connection[1] / 8)}
+                    if t_time not in network['traveltimes']:
+                        network['traveltimes'].append(t_time)
+
+        for line in lines:
+            for start in lines[line]['start-stations']:
+                if start not in lines[line]['stop-stations']:
+                    lines[line]['start'] = start
+            for stop in lines[line]['stop-stations']:
+                if stop not in lines[line]['start-stations']:
+                    lines[line]['stop'] = stop
+
+            network['lines'].append({'name': line, 'stations': [lines[line]['start']]})
+            current_station = lines[line]['start']
+            while current_station != lines[line]['stop']:
+                for name in uvdot_str['routes'][current_station][1]['railways']:
+                    if uvdot_str['routes'][current_station][1]['railways'][name][0][0] == line:
+                        network['lines'][-1]['stations'].append(name)
+                        current_station = name
+                        break
+
+            if self.st_mode:
+                network['prices'] = self.network_files['network']['prices']
+
+            line_number = int(re.findall(r'\d+', line)[0])
+            if line_number % 2:
+                network['doublelines'].append([line, line.replace(str(line_number), str(line_number + 1))])
+
+        for station in stations:
+            content = {'name': station, 'lines': []}
+            for line in network['lines']:
+                if station in line['stations']:
+                    platform = 0
+                    if self.st_mode:
+                        for rstation in self.network_files['network']['stations']:
+                            if rstation['name'] == station:
+                                for rline in rstation['lines']:
+                                    if rline['name'] == self.replace_ust(line['name']):
+                                        platform = rline['platform']
+                    content['lines'].append({'name': line['name'], 'platform': platform})
+            network['stations'].append(content)
+            
+        return network
+
+    def create_st_export(self) -> str:
+        return f'const network = {self.replace_ust(json.dumps(self.convert_uvdot_st(self.network_files)))};\n\n'

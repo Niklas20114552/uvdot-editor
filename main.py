@@ -11,6 +11,20 @@ from uvlib import NetworkFiles
 network_files = NetworkFiles()
 
 
+class PyperclipError(QDialog):
+    def __init__(self):
+        super().__init__()
+        self.layout = QVBoxLayout()
+
+        self.text = QLabel('You need to install xclip or xselect first, to copy the code.')
+        self.text.setFont(QFont(self.text.font().family(), 12))
+        self.close_button = QPushButton('Okay')
+        self.close_button.clicked.connect(self.reject)
+
+        self.layout.addWidget(self.text)
+        self.layout.addWidget(self.close_button)
+        self.setLayout(self.layout)
+
 class PlacesTab(QWidget):
     def __init__(self) -> None:
         def check_button():
@@ -270,7 +284,8 @@ class CloseDialog(QDialog):
         self.setLayout(self.layout)
         self.setWindowTitle("Quit?")
 
-        self.layout.addWidget(QLabel('Do you want to export the network before closing?'))
+        self.text = QLabel('Do you want to export the network before closing?')
+        self.text.setFont(QFont(self.text.font().family(), 12))
         self.yes = QPushButton('&Yes')
         self.no = QPushButton('&No')
         self.cancel = QPushButton('&Cancel')
@@ -282,6 +297,7 @@ class CloseDialog(QDialog):
         self.button_layout.addWidget(self.yes)
         self.button_layout.addWidget(self.no)
         self.button_layout.addWidget(self.cancel)
+        self.layout.addWidget(self.text)
         self.layout.addLayout(self.button_layout)
 
     def do_cancel(self):
@@ -371,24 +387,32 @@ class Application(QMainWindow):
 
     def create_export_page(self):
         def prepare_export():
-            if st_export.isChecked():
+            # if st_export.isChecked():
+            if network_files.st_mode:
                 export_area.setPlainText(network_files.create_st_export())
             else:
                 export_area.setPlainText(network_files.create_export())
 
         def copy_export():
-            if st_export.isChecked():
-                pyperclip.copy(network_files.create_st_export())
-            else:
-                pyperclip.copy(network_files.create_export())
-            if self.only_export_mode:
-                self.close()
+            try:
+                # if st_export.isChecked():
+                if network_files.st_mode:
+                    pyperclip.copy(network_files.create_st_export())
+                else:
+                    pyperclip.copy(network_files.create_export())
+            except pyperclip.PyperclipException:
+                error_dialog = PyperclipError()
+                error_dialog.exec()
+            finally:
+                if self.only_export_mode:
+                    self.close()
 
         def saveas():
             file_path, _ = QFileDialog.getSaveFileName(self, 'Save script as...', os.path.expanduser('~'),
                                                        'JavaScript network file (*.js')
             with open(file_path, 'w') as f:
-                if st_export.isChecked():
+                # if st_export.isChecked():
+                if network_files.st_mode:
                     f.write(network_files.create_st_export())
                 else:
                     f.write(network_files.create_export())
@@ -416,9 +440,10 @@ class Application(QMainWindow):
         export_area.setReadOnly(True)
         export_area.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
-        export_layout = QHBoxLayout()
-        st_export = QRadioButton('&ST-Mode')
-        uvdot_export = QRadioButton('&UVDOT-Mode')
+        # Temporarily disabled, because UVDOT → ST-Converter doesn't work with UVDOT Network (Converted only) IDK why
+        # export_layout = QHBoxLayout()
+        # st_export = QRadioButton('&ST-Mode')
+        # uvdot_export = QRadioButton('&UVDOT-Mode')
 
         copy_button = QPushButton('&Copy to clipboard')
         copy_button.clicked.connect(copy_export)
@@ -426,21 +451,21 @@ class Application(QMainWindow):
         save_button = QPushButton('&Save as...')
         save_button.clicked.connect(saveas)
 
-        uvdot_export.setDisabled(network_files.st_mode)
-        uvdot_export.setChecked(not network_files.st_mode)
-        st_export.setChecked(network_files.st_mode)
+        # uvdot_export.setDisabled(network_files.st_mode)
+        # uvdot_export.setChecked(not network_files.st_mode)
+        # st_export.setChecked(network_files.st_mode)
 
-        uvdot_export.toggled.connect(prepare_export)
+        # uvdot_export.toggled.connect(prepare_export)
         prepare_export()
 
         title_layout.addWidget(back_button)
         title_layout.addWidget(title)
-        export_layout.addWidget(st_export)
-        export_layout.addWidget(uvdot_export)
-        export_layout.addStretch()
+        # export_layout.addWidget(st_export)
+        # export_layout.addWidget(uvdot_export)
+        # export_layout.addStretch()
         layout.addLayout(title_layout)
         layout.addWidget(export_area)
-        layout.addLayout(export_layout)
+        # layout.addLayout(export_layout)
         layout.addWidget(copy_button)
         layout.addWidget(save_button)
 

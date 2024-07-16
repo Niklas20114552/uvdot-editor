@@ -27,12 +27,9 @@ and [st-transports](https://github.com/Niklas20114552/st-transports).
 - [ ] Node management
 - [X] Places management
 
-
-
-- [ ] ST export mode (+ converter)
+- [X] ST export mode
+- [ ] ST export mode for UVDOT networks
 - [X] UVDOT export mode
-
-
 
 - [X] UVDOT import
 - [X] ST import
