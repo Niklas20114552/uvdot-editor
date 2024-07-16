@@ -11,9 +11,7 @@ and [st-transports](https://github.com/Niklas20114552/st-transports).
 
 2. **Optional but recommended:** (Only for linux) Make a venv
 
-   `python3 -m venv uvdot-editor-venv`
-
-   `source uvdot-editor-venv/bin/activate`
+   `python3 -m venv uvdot-editor-venv && source uvdot-editor-venv/bin/activate`
 
 3. Install the dependencies
 
@@ -30,8 +28,10 @@ and [st-transports](https://github.com/Niklas20114552/st-transports).
 - [X] Places management
 
 
+
 - [ ] ST export mode (+ converter)
 - [X] UVDOT export mode
+
 
 
 - [X] UVDOT import
