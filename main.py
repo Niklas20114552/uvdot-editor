@@ -1,31 +1,112 @@
-import json
 import os
-import re
 import sys
 
 import pyperclip
 from PyQt6.QtCore import *
 from PyQt6.QtGui import *
 from PyQt6.QtWidgets import *
-from chompjs import parse_js_object
 
-network_files: dict = {}
-st_mode: bool = False
+from uvlib import NetworkFiles
 
+network_files = NetworkFiles()
 
-def replace_dict_entry_at_index(d: dict, index: int, new_key: str, new_value: str) -> dict:
-    items = list(d.items())
-    items[index] = (new_key, new_value)
-    return dict(items)
 
 class PlacesTab(QWidget):
     def __init__(self) -> None:
+        def check_button():
+            self.add_button.setDisabled(not (self.add_name.text() and self.add_loc.text()))
+
         super().__init__()
+        self.dont_update = False
+
+        self.layout = QVBoxLayout()
+        self.setLayout(self.layout)
+
+        self.table = QTableWidget()
+        self.table.verticalHeader().setVisible(False)
+        self.table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.table.setColumnCount(2)
+        self.table.setHorizontalHeaderLabels(['Name', 'Location'])
+        self.table.itemChanged.connect(self.process_update)
+
+        self.layout.addWidget(self.table)
+
+        self.update_table()
+
+        self.add_box = QGroupBox('Add place')
+        self.add_layout = QHBoxLayout()
+        self.add_box.setLayout(self.add_layout)
+
+        self.add_name = QLineEdit()
+        self.add_loc = QLineEdit()
+        self.add_button = QPushButton('Add place')
+        self.add_button.setFixedWidth(100)
+
+        self.add_name.setPlaceholderText('Name')
+        self.add_loc.setPlaceholderText('Location')
+        if network_files.st_mode:
+            self.add_loc.setDisabled(True)
+        self.add_name.textChanged.connect(check_button)
+        self.add_loc.textChanged.connect(check_button)
+
+        self.add_button.clicked.connect(self.add_place)
+
+        self.add_layout.addWidget(self.add_name)
+        self.add_layout.addWidget(self.add_loc)
+        self.add_layout.addWidget(self.add_button)
+
+        self.layout.addWidget(self.add_box)
+        check_button()
+
+    def add_place(self):
+        network_files.add_place(self.add_name.text(), self.add_loc.text())
+        self.update_table()
+
+    def process_update(self, item: QTableWidgetItem):
+        if self.dont_update:
+            return
+        index = self.table.item(item.row(), 0).text()
+        if item.column() == 0:
+            dict_index = item.row()
+            old_name = network_files.get_place_by_index(dict_index)
+            if item.text().strip() == '':
+                network_files.remove_place(dict_index)
+            else:
+                network_files.rename_place(old_name, item.text(), dict_index)
+        elif item.column() == 1:
+            if item.text().strip() == '':
+                item.setText(network_files.get_index_place(index))
+            else:
+                network_files.set_index_place(index, item.text())
+        self.update_table()
+
+    def update_table(self):
+        try:
+            self.dont_update = True
+
+            self.table.setRowCount(network_files.get_place_len())
+            for row, name in enumerate(network_files.get_places()):
+                name_cell = QTableWidgetItem(name)
+                loc_cell = QTableWidgetItem(network_files.get_location_place(name))
+                if network_files.st_mode:
+                    loc_cell.setFlags(loc_cell.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+
+                self.table.setItem(row, 0, name_cell)
+                self.table.setItem(row, 1, loc_cell)
+                self.table.resizeColumnsToContents()
+                self.table.resizeRowsToContents()
+        except Exception as e:
+            network_files.reset_network()
+            print(f"[D> An error occurred during table update: {e}")
+        finally:
+            self.dont_update = False
+
 
 class NodesTab(QWidget):
     def __init__(self) -> None:
-        super().__init__()      
-        
+        super().__init__()
+
+
 class MethodsTab(QWidget):
     def __init__(self):
         def update_bg():
@@ -75,7 +156,7 @@ class MethodsTab(QWidget):
         self.add_bg.setPlaceholderText('Background color')
         self.add_fg.setPlaceholderText('Foreground color')
         self.add_op.setPlaceholderText('Operator')
-        if st_mode:
+        if network_files.st_mode:
             self.add_name.textChanged.connect(update_bg)
             self.add_bg.setDisabled(True)
             self.add_fg.setDisabled(True)
@@ -101,8 +182,7 @@ class MethodsTab(QWidget):
         check_button()
 
     def add_method(self):
-        network_files['methodMetadata'][self.add_name.text()] = {'color': [self.add_bg.text(), self.add_fg.text()],
-                                                                 'operator': self.add_op.text()}
+        network_files.add_method(self.add_name.text(), self.add_bg.text(), self.add_fg.text(), self.add_op.text())
         self.update_table()
 
     def process_update(self, item: QTableWidgetItem):
@@ -111,67 +191,54 @@ class MethodsTab(QWidget):
         index = self.table.item(item.row(), 0).text()
         if item.column() == 0:
             dict_index = item.row()
-            old_name = tuple(network_files['methodMetadata'].keys())[dict_index]
-            if st_mode:
+            old_name = network_files.get_method_by_index(dict_index)
+            if network_files.st_mode:
                 if item.text().startswith('USTe '):
-                    network_files['methodMetadata'][old_name]['color'][0] = '#066b5f'
-                    network_files['methodMetadata'] = replace_dict_entry_at_index(network_files['methodMetadata'],
-                                                                                  dict_index,
-                                                                                  item.text(),
-                                                                                  network_files['methodMetadata'][
-                                                                                      old_name])
+                    network_files.set_method_bg_color(old_name, '#066b5f')
+                    network_files.rename_method(old_name, item.text(), dict_index)
                 elif item.text().startswith('UST '):
-                    network_files['methodMetadata'][old_name]['color'][0] = '#6b006b'
-                    network_files['methodMetadata'] = replace_dict_entry_at_index(network_files['methodMetadata'],
-                                                                                  dict_index,
-                                                                                  item.text(),
-                                                                                  network_files['methodMetadata'][
-                                                                                      old_name])
+                    network_files.set_method_bg_color(old_name, '#6b006b')
+                    network_files.rename_method(old_name, item.text(), dict_index)
                 elif item.text().strip() == '':
-                    network_files['methodMetadata'].pop(tuple(network_files['methodMetadata'].keys())[dict_index])
+                    network_files.remove_method(dict_index)
                 else:
                     item.setText(old_name)
             else:
                 if item.text().strip() == '':
-                    network_files['methodMetadata'].pop(tuple(network_files['methodMetadata'].keys())[dict_index])
+                    network_files.remove_method(dict_index)
                 else:
-                    network_files['methodMetadata'] = replace_dict_entry_at_index(network_files['methodMetadata'],
-                                                                                  dict_index,
-                                                                                  item.text(),
-                                                                                  network_files['methodMetadata'][
-                                                                                      old_name])
+                    network_files.rename_method(old_name, item.text(), dict_index)
         elif item.column() == 1:
             if item.text().strip() == '':
-                item.setText(network_files['methodMetadata'][index]['color'][0])
+                item.setText(network_files.get_method_bg_color(index))
             else:
-                network_files['methodMetadata'][index]['color'][0] = item.text()
-
+                network_files.set_method_bg_color(index, item.text())
         elif item.column() == 2:
             if item.text().strip() == '':
-                item.setText(network_files['methodMetadata'][index]['color'][1])
+                item.setText(network_files.get_method_fg_color(index))
             else:
-                network_files['methodMetadata'][index]['color'][1] = item.text()
+                network_files.set_method_fg_color(index, item.text())
         elif item.column() == 3:
             if item.text().strip() == '':
-                item.setText(network_files['methodMetadata'][index]['operator'])
+                item.setText(network_files.get_method_op(index))
             else:
-                network_files['methodMetadata'][index]['operator'] = item.text()
+                network_files.set_method_op(index, item.text())
         self.update_table()
 
     def update_table(self):
         try:
             self.dont_update = True
 
-            self.table.setRowCount(len(network_files['methodMetadata']))
-            for row, name in enumerate(network_files['methodMetadata']):
+            self.table.setRowCount(network_files.get_methods_len())
+            for row, name in enumerate(network_files.get_methods()):
                 name_cell = QTableWidgetItem(name)
-                bg_cell = QTableWidgetItem(network_files['methodMetadata'][name]['color'][0])
-                fg_cell = QTableWidgetItem(network_files['methodMetadata'][name]['color'][1])
-                operator_cell = QTableWidgetItem(network_files['methodMetadata'][name]['operator'])
-                #transfer_checkbox = QCheckBox()
-                #transfer_checkbox.setChecked(name in network_files['transfers'])
-                #transfer_cell = QTableWidgetItem(transfer_checkbox)
-                if st_mode:
+                bg_cell = QTableWidgetItem(network_files.get_method_bg_color(name))
+                fg_cell = QTableWidgetItem(network_files.get_method_fg_color(name))
+                operator_cell = QTableWidgetItem(network_files.get_method_op(name))
+                # transfer_checkbox = QCheckBox()
+                # transfer_checkbox.setChecked(name in network_files['transfers'])
+                # transfer_cell = QTableWidgetItem(transfer_checkbox)
+                if network_files.st_mode:
                     bg_cell.setFlags(bg_cell.flags() & ~Qt.ItemFlag.ItemIsEnabled)
                     fg_cell.setFlags(fg_cell.flags() & ~Qt.ItemFlag.ItemIsEnabled)
                     operator_cell.setFlags(operator_cell.flags() & ~Qt.ItemFlag.ItemIsEnabled)
@@ -180,61 +247,15 @@ class MethodsTab(QWidget):
                 self.table.setItem(row, 1, bg_cell)
                 self.table.setItem(row, 2, fg_cell)
                 self.table.setItem(row, 3, operator_cell)
-                #self.table.setItem(row, 4, transfer_cell)
+                # self.table.setItem(row, 4, transfer_cell)
                 self.table.resizeColumnsToContents()
                 self.table.resizeRowsToContents()
         except Exception as e:
-            network_files['places'] = {}
-            network_files['transfers'] = {}
-            network_files['methodMetadata'] = {}
-            network_files['routes'] = {}
-            
+            network_files.reset_network()
+
             print(f"[D> An error occurred during table update: {e}")
         finally:
             self.dont_update = False
-
-
-def get_traveltimes(stations: list[str], st_string: dict) -> int:
-    stations.sort()
-    for time in st_string['traveltimes']:
-        if time['start'] == stations[0] and time['end'] == stations[1]:
-            return time['time']
-    return 0
-
-
-def get_nextstation(line: str, cstation: str, st_string: dict) -> str:
-    for lines in st_string['lines']:
-        if lines['name'] == line:
-            if not lines['stations'].index(cstation) + 1 == len(lines['stations']):
-                return lines['stations'][lines['stations'].index(cstation) + 1]
-
-
-def convert_st_uvdot(st_string: dict) -> tuple:
-    print('[D> Converting ST Network...')
-    places = {}
-    methodMetadata = {}
-    routes = {}
-
-    for station in st_string['stations']:
-        places[station['name']] = 'CHANGE-ME'
-        routes[station['name']] = [['CHANGE-ME', 'CHANGE-ME'], {'railways': {}}]
-        for line in station['lines']:
-            next_station = get_nextstation(line['name'], station['name'], st_string)
-            if next_station:
-                stations = [station['name'], next_station]
-                routes[station['name']][1]['railways'][next_station] = [
-                    [line['name'].replace('USTe', 'UltraStar express').replace('UST', 'UltraStar')],
-                    get_traveltimes(stations, st_string) * 8,
-                    {'currency': 'Emerald', 'price': 4, 'pass': 'SeaCard', 'passPrice': 2}]
-
-    for line in st_string['lines']:
-        if line['name'].startswith('USTe'):
-            methodMetadata[line['name']] = {'color': ['#066b5f', 'white']}
-        else:
-            methodMetadata[line['name']] = {'color': ['#6b006b', 'white']}
-        methodMetadata[line['name']]['operator'] = 'Seacrestica Transports Outpost'
-
-    return places, methodMetadata, routes
 
 
 class CloseDialog(QDialog):
@@ -265,43 +286,7 @@ class CloseDialog(QDialog):
         self.reject()
 
 
-def create_export() -> str:
-    export = ''
-
-    for file in network_files:
-        export += f'const {file} = {json.dumps(network_files[file])};\n\n'
-    export.removesuffix('\n')
-    return export
-
-
-def create_st_export() -> str:
-    export = ''
-
-    # We need the platform. The platform is not being converted. So please store it somewhere else if st_mode is enabled.
-    return export
-
-
 class Application(QMainWindow):
-
-    def process_input(self, inputstr: str) -> None:
-        global network_files
-        global st_mode
-        network_files = {}
-        # UVDOT uses exports, dont look at the start of the string, look anywhere
-        pattern = re.compile(r'(?:const|let|var) (network|places|methodMetadata|routes|transfers) = ((?:{|\[)(?:[^;]|\n)*(?:}|\]));$',
-                             re.MULTILINE)
-
-        matches = re.finditer(pattern, inputstr)
-        for match in matches:
-            if match.groups()[0] == 'network':
-                print('[D> ST Network detected')
-                network_files['places'], network_files['methodMetadata'], network_files['routes'] = convert_st_uvdot(
-                    parse_js_object(match.groups()[1]))
-                st_mode = True
-            else:
-                print(f'[D> UVDOT Network detected ({match.groups()[0]})')
-                st_mode = False
-                network_files[match.groups()[0]] = parse_js_object(match.groups()[1])
 
     def __init__(self):
         super().__init__()
@@ -316,8 +301,8 @@ class Application(QMainWindow):
 
         def input_js(text: str):
             global network_files
-            self.process_input(text)
-            if ('routes' and 'methodMetadata' and 'places') in network_files:
+            network_files.process_file(text)
+            if network_files.is_valid_network():
                 self.only_export_mode = False
                 self.create_main_page()
             else:
@@ -332,18 +317,19 @@ class Application(QMainWindow):
             if file_name:
                 with open(file_name, 'r') as f:
                     input_js(f.read())
-                    
+
         def open_local_file():
             try:
                 with open("./data.ts", 'r') as f:
                     input_js(f.read())
-            except:
+            except Exception:
                 try:
                     with open("./network.js", 'r') as f:
                         input_js(f.read())
-                except:
-                    subtitle.setText('Failed to import a local file! Please check if netowkr.js or data.ts exists in the current directory and try again!')
-                
+                except Exception:
+                    subtitle.setText(
+                        'Failed to import a local file! Please check if network.js or data.ts exists in the current directory and try again!')
+
         def skip_import():
             self.create_main_page()
 
@@ -357,10 +343,15 @@ class Application(QMainWindow):
         editbox.setPlaceholderText("Enter your file's content here")
         editbox.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         editbox.setFont(QFont('monospace', 10))
-        submit_button = QPushButton('&Import')
+        import_layout = QHBoxLayout()
+        submit_button = QPushButton('&Import Textbox')
         open_file_button = QPushButton('&Open file')
         auto_file_button = QPushButton('&Auto-detect file')
         skip_import_button = QPushButton('&Skip Importing')
+        import_layout.addWidget(submit_button)
+        import_layout.addWidget(open_file_button)
+        import_layout.addWidget(auto_file_button)
+        import_layout.addWidget(skip_import_button)
 
         submit_button.clicked.connect(process_input)
         open_file_button.clicked.connect(open_file_picker)
@@ -370,26 +361,23 @@ class Application(QMainWindow):
         layout.addWidget(title)
         layout.addWidget(subtitle)
         layout.addWidget(editbox)
-        layout.addWidget(submit_button)
-        layout.addWidget(open_file_button)
-        layout.addWidget(auto_file_button)
-        layout.addWidget(skip_import_button)
-        
+        layout.addLayout(import_layout)
+
         widget.setLayout(layout)
         self.setCentralWidget(widget)
 
     def create_export_page(self):
         def prepare_export():
             if st_export.isChecked():
-                export_area.setPlainText(create_st_export())
+                export_area.setPlainText(network_files.create_st_export())
             else:
-                export_area.setPlainText(create_export())
+                export_area.setPlainText(network_files.create_export())
 
         def copy_export():
             if st_export.isChecked():
-                pyperclip.copy(create_st_export())
+                pyperclip.copy(network_files.create_st_export())
             else:
-                pyperclip.copy(create_export())
+                pyperclip.copy(network_files.create_export())
             if self.only_export_mode:
                 self.close()
 
@@ -398,9 +386,9 @@ class Application(QMainWindow):
                                                        'JavaScript network file (*.js')
             with open(file_path, 'w') as f:
                 if st_export.isChecked():
-                    f.write(create_st_export())
+                    f.write(network_files.create_st_export())
                 else:
-                    f.write(create_export())
+                    f.write(network_files.create_export())
             if self.only_export_mode:
                 self.close()
 
@@ -435,9 +423,9 @@ class Application(QMainWindow):
         save_button = QPushButton('&Save as...')
         save_button.clicked.connect(saveas)
 
-        uvdot_export.setDisabled(st_mode)
-        uvdot_export.setChecked(not st_mode)
-        st_export.setChecked(st_mode)
+        uvdot_export.setDisabled(network_files.st_mode)
+        uvdot_export.setChecked(not network_files.st_mode)
+        st_export.setChecked(network_files.st_mode)
 
         uvdot_export.toggled.connect(prepare_export)
         prepare_export()
@@ -451,6 +439,7 @@ class Application(QMainWindow):
         layout.addWidget(export_area)
         layout.addLayout(export_layout)
         layout.addWidget(copy_button)
+        layout.addWidget(save_button)
 
         widget.setLayout(layout)
         self.setCentralWidget(widget)
@@ -462,7 +451,7 @@ class Application(QMainWindow):
         title_layout = QHBoxLayout()
         title = QLabel()
         title.setFont(QFont(title.font().family(), 14))
-        if st_mode:
+        if network_files.st_mode:
             title.setText('Seacrestica Transports Network')
         else:
             title.setText('UltraVanilla Department of Transportation Network')
@@ -473,9 +462,9 @@ class Application(QMainWindow):
         import_button.setFixedWidth(50)
         # Do different options with tabs
         tab_bar = QTabWidget()
-        tab_bar.addTab(MethodsTab(), "Methods")
-        tab_bar.addTab(NodesTab(), "Nodes")
-        tab_bar.addTab(PlacesTab(), "Places")
+        tab_bar.addTab(MethodsTab(), "&Methods")
+        tab_bar.addTab(NodesTab(), "&Nodes")
+        tab_bar.addTab(PlacesTab(), "&Places")
 
         title_layout.addWidget(export_button)
         title_layout.addWidget(import_button)
@@ -508,8 +497,8 @@ def main():
     app = QApplication(sys.argv)
     app.setDesktopFileName('uvdot-edit')
 
-    browser = Application()
-    browser.show()
+    editor = Application()
+    editor.show()
     return app.exec()
 
 
