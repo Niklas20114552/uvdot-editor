@@ -2,6 +2,7 @@
 
 This specific branch (`reformat`) is for @GirlInPurple to convert the entire project to the new UVDOT data format.\
 This will be continuously worked on as I convert both the UVDOT router and this project over to the new format.\
+An explaination of the uv-transit v2 migration [here](https://github.com/GirlInPurple/uv-transit/blob/node-port/technical.md#changes-in-2xx).\
 No ETA, but within the next week.
 
 The Editor for Methods, Nodes and Places for [uv-transit](https://github.com/GirlInPurple/uv-transit)
