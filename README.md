@@ -1,5 +1,9 @@
 # UVDOT (Node) Editor
 
+This specific branch (`reformat`) is for @GirlInPurple to convert the entire project to the new UVDOT data format.\
+This will be continuously worked on as I convert both the UVDOT router and this project over to the new format.\
+No ETA, but within the next week.
+
 The Editor for Methods, Nodes and Places for [uv-transit](https://github.com/GirlInPurple/uv-transit)
 and [st-transports](https://github.com/Niklas20114552/st-transports).
 
@@ -23,13 +27,17 @@ and [st-transports](https://github.com/Niklas20114552/st-transports).
 
 ## Feature list
 
-- [X] Method management
+- [ ] Method management
+  - [ ] Get the checkbox for the `transfer?` option working
 - [ ] Node management
-- [X] Places management
+- [ ] Places management
+  - [ ] Get the data to display properly in the table again
 
-- [X] ST export mode
+- [ ] ST export mode
 - [ ] ST export mode for UVDOT networks
-- [X] UVDOT export mode
+- [ ] UVDOT export mode
+  - [ ] Get this working, then ST and UVDOT -> ST exports
 
 - [X] UVDOT import
 - [X] ST import
+  - These should continue working throughout the migration

@@ -3,7 +3,6 @@ import re
 
 from chompjs import parse_js_object
 
-
 class NetworkFiles:
     def __init__(self):
         self.network_files: dict = {}
@@ -30,12 +29,10 @@ class NetworkFiles:
 
     def convert_st_uvdot(self, st_string: dict) -> tuple:
         print('[D> Converting ST Network...')
-        places = {}
-        methodMetadata = {}
+        lines = {}
         routes = {}
 
         for station in st_string['stations']:
-            places[station['name']] = 'CHANGE-ME'
             routes[station['name']] = [['CHANGE-ME', 'CHANGE-ME'], {'railways': {}}]
             for line in station['lines']:
                 next_station = self.get_nextstation(line['name'], station['name'], st_string)
@@ -48,17 +45,17 @@ class NetworkFiles:
 
         for line in st_string['lines']:
             if line['name'].startswith('USTe'):
-                methodMetadata[line['name']] = {'color': ['#066b5f', 'white']}
+                lines[line['name']] = {'color': ['#066b5f', 'white']}
             else:
-                methodMetadata[line['name']] = {'color': ['#6b006b', 'white']}
-            methodMetadata[line['name']]['operator'] = 'Seacrestica Transports Outpost'
+                lines[line['name']] = {'color': ['#6b006b', 'white']}
+            lines[line['name']]['operator'] = 'Seacrestica Transports Outpost'
 
-        return places, methodMetadata, routes
+        return lines, routes
 
     def process_file(self, inputstr: str):
         self.network_files: dict = {}
         pattern = re.compile(
-            r'(?:const|let|var) (network|places|methodMetadata|routes|transfers) = ([{\[](?:[^;]|\n)*[}\]]);$',
+            r'(?:const|let|var) (network|places|lines|routes|transfers) = ([{\[](?:[^;]|\n)*[}\]]);$',
             re.MULTILINE)
 
         matches = re.finditer(pattern, inputstr)
@@ -66,8 +63,7 @@ class NetworkFiles:
             self.network_files[match.groups()[0]] = parse_js_object(match.groups()[1])
             if match.groups()[0] == 'network':
                 print('[D> ST Network detected')
-                self.network_files['places'], self.network_files['methodMetadata'], self.network_files[
-                    'routes'] = self.convert_st_uvdot(parse_js_object(match.groups()[1]))
+                self.network_files['lines'], self.network_files['routes'] = self.convert_st_uvdot(parse_js_object(match.groups()[1]))
                 self.st_mode = True
             else:
                 print(f'[D> UVDOT Network detected ({match.groups()[0]})')
@@ -79,81 +75,97 @@ class NetworkFiles:
         return dict(items)
 
     def rename_place(self, old_name: str, new_name: str, index: int):
-        self.network_files['places'] = self.replace_dict_entry_at_index(self.network_files['places'], index, new_name,
-                                                                        self.network_files['places'][old_name])
+        self.network_files['routes'] = self.replace_dict_entry_at_index(self.network_files['routes'], index, new_name,
+                                                                        self.network_files['routes'][old_name])
 
     def remove_place(self, index: int):
-        self.network_files['places'].pop(tuple(self.network_files['places'].keys())[index])
+        self.network_files['routes'].pop(tuple(self.network_files['routes'].keys())[index])
 
     def rename_method(self, old_name: str, new_name: str, index: int):
-        self.network_files['methodMetadata'] = self.replace_dict_entry_at_index(self.network_files['methodMetadata'],
+        self.network_files['lines'] = self.replace_dict_entry_at_index(self.network_files['lines'],
                                                                                 index, new_name,
-                                                                                self.network_files['methodMetadata'][
+                                                                                self.network_files['lines'][
                                                                                     old_name])
 
     def remove_method(self, index: int):
-        self.network_files['methodMetadata'].pop(tuple(self.network_files['methodMetadata'].keys())[index])
+        self.network_files['lines'].pop(tuple(self.network_files['lines'].keys())[index])
 
     def add_place(self, name: str, loc: str):
-        self.network_files['places'][name] = loc
+        self.network_files['routes'][name] = loc
 
     def add_method(self, name: str, bg: str, fg: str, op: str):
-        self.network_files['methodMetadata'][name] = {'color': [bg, fg], 'operator': op}
+        self.network_files['lines'][name] = {'color': [bg, fg], 'operator': op}
 
     def get_method_by_index(self, index: int) -> str:
-        return tuple(self.network_files['methodMetadata'].keys())[index]
+        return tuple(self.network_files['lines'].keys())[index]
 
     def get_place_by_index(self, index: int) -> str:
-        return tuple(self.network_files['places'].keys())[index]
+        return tuple(self.network_files['routes'].keys())[index]
 
     def set_index_place(self, index: str, val: str):
-        self.network_files['places'][index] = val
+        self.network_files['routes'][index] = val
 
     def get_index_place(self, index: str) -> str:
-        return self.network_files['places'][index]
+        return self.network_files['routes'][index]
 
     def get_place_len(self) -> int:
-        return len(self.network_files['places'])
+        return len(self.network_files['routes'])
 
     def get_methods_len(self) -> int:
-        return len(self.network_files['methodMetadata'])
+        return len(self.network_files['lines'])
 
     def get_places(self) -> dict:
-        return self.network_files['places']
+        return self.network_files['routes']
 
     def get_methods(self) -> dict:
-        return self.network_files['methodMetadata']
+        return self.network_files['lines']
 
     def is_valid_network(self) -> bool:
-        return ('routes' and 'methodMetadata' and 'places' and 'transfers') or 'network' in self.network_files
+        return ('routes' and 'lines') or 'network' in self.network_files
 
     def get_location_place(self, name: str) -> str:
-        return self.network_files['places'][name]
-
+        return self.network_files['routes'][name]
+    
     def reset_network(self):
-        self.network_files['places'] = {}
-        self.network_files['transfers'] = {}
-        self.network_files['methodMetadata'] = {}
+        self.network_files['lines'] = {}
         self.network_files['routes'] = {}
 
     def set_method_bg_color(self, name: str, value: str):
-        self.network_files['methodMetadata'][name]['color'][0] = value
+        self.network_files['lines'][name]['color'][0] = value
 
     def get_method_bg_color(self, name: str) -> str:
-        return self.network_files['methodMetadata'][name]['color'][0]
+        return self.network_files['lines'][name]['color'][0]
 
     def set_method_fg_color(self, name: str, value: str):
-        self.network_files['methodMetadata'][name]['color'][1] = value
+        self.network_files['lines'][name]['color'][1] = value
 
     def get_method_fg_color(self, name: str) -> str:
-        return self.network_files['methodMetadata'][name]['color'][1]
+        return self.network_files['lines'][name]['color'][1]
 
     def get_method_op(self, name: str) -> str:
-        return self.network_files['methodMetadata'][name]['operator']
+        return self.network_files['lines'][name]['operator']
 
     def set_method_op(self, name: str, value: str):
-        self.network_files['methodMetadata'][name]['operator'] = value
+        self.network_files['lines'][name]['operator'] = value
 
+    def get_method_alt_name(self, name: str) -> str:
+        try:
+            return self.network_files['lines'][name]['altName']
+        except Exception as _:
+            return ""
+    
+    def set_method_alt_name(self, name: str, value: str):
+        self.network_files['lines'][name]['altName'] = value
+    
+    def is_method_transfer(self, name: str) -> bool:
+        try:
+            return self.network_files['lines'][name]['transfer']
+        except Exception as _:
+            return False
+    
+    def set_method_transfer(self, name: str, value: bool) -> None:
+        self.network_files['lines'][name]['transfer'] = value
+    
     def create_export(self) -> str:
         export = ''
 

@@ -10,7 +10,6 @@ from uvlib import NetworkFiles
 
 network_files = NetworkFiles()
 
-
 class PyperclipError(QDialog):
     def __init__(self):
         super().__init__()
@@ -24,6 +23,10 @@ class PyperclipError(QDialog):
         self.layout.addWidget(self.text)
         self.layout.addWidget(self.close_button)
         self.setLayout(self.layout)
+
+class RoutesTab(QWidget):
+    def __init__(self) -> None:
+        super().__init__()
 
 class PlacesTab(QWidget):
     def __init__(self) -> None:
@@ -39,8 +42,8 @@ class PlacesTab(QWidget):
         self.table = QTableWidget()
         self.table.verticalHeader().setVisible(False)
         self.table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.table.setColumnCount(2)
-        self.table.setHorizontalHeaderLabels(['Name', 'Location'])
+        self.table.setColumnCount(5)
+        self.table.setHorizontalHeaderLabels(['Name', 'X Location', 'Z Location', 'Layer', 'Region'])
         self.table.itemChanged.connect(self.process_update)
 
         self.layout.addWidget(self.table)
@@ -52,21 +55,38 @@ class PlacesTab(QWidget):
         self.add_box.setLayout(self.add_layout)
 
         self.add_name = QLineEdit()
-        self.add_loc = QLineEdit()
+        self.add_x_loc = QLineEdit()
+        self.add_z_loc = QLineEdit()
+        self.add_layer = QLineEdit()
+        self.add_region = QLineEdit()
         self.add_button = QPushButton('Add place')
         self.add_button.setFixedWidth(100)
 
         self.add_name.setPlaceholderText('Name')
-        self.add_loc.setPlaceholderText('Location')
+        self.add_x_loc.setPlaceholderText('X')
+        self.add_z_loc.setPlaceholderText('Z')
+        self.add_layer.setPlaceholderText('Layer')
+        self.add_region.setPlaceholderText('Region')
+        
         if network_files.st_mode:
-            self.add_loc.setDisabled(True)
+            self.add_x_loc.setDisabled(True)
+            self.add_z_loc.setDisabled(True)
+            self.add_layer.setDisabled(True)
+            self.add_region.setDisabled(True)
+            
         self.add_name.textChanged.connect(check_button)
-        self.add_loc.textChanged.connect(check_button)
+        self.add_x_loc.textChanged.connect(check_button)
+        self.add_z_loc.textChanged.connect(check_button)
+        self.add_layer.textChanged.connect(check_button)
+        self.add_region.textChanged.connect(check_button)
 
         self.add_button.clicked.connect(self.add_place)
 
         self.add_layout.addWidget(self.add_name)
-        self.add_layout.addWidget(self.add_loc)
+        self.add_layout.addWidget(self.add_x_loc)
+        self.add_layout.addWidget(self.add_z_loc)
+        self.add_layout.addWidget(self.add_layer)
+        self.add_layout.addWidget(self.add_region)
         self.add_layout.addWidget(self.add_button)
 
         self.layout.addWidget(self.add_box)
@@ -118,12 +138,6 @@ class PlacesTab(QWidget):
         finally:
             self.dont_update = False
 
-
-class NodesTab(QWidget):
-    def __init__(self) -> None:
-        super().__init__()
-
-
 class MethodsTab(QWidget):
     def __init__(self):
         def update_bg():
@@ -150,8 +164,8 @@ class MethodsTab(QWidget):
         self.table = QTableWidget()
         self.table.verticalHeader().setVisible(False)
         self.table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.table.setColumnCount(4)
-        self.table.setHorizontalHeaderLabels(['Name', 'BG-Color', 'FG-Color', 'Operator', 'Transfer?'])
+        self.table.setColumnCount(6)
+        self.table.setHorizontalHeaderLabels(['Name', 'BG-Color', 'FG-Color', 'Operator', 'AltName', 'Transfer?'])
         self.table.itemChanged.connect(self.process_update)
 
         self.layout.addWidget(self.table)
@@ -166,6 +180,8 @@ class MethodsTab(QWidget):
         self.add_bg = QLineEdit()
         self.add_fg = QLineEdit()
         self.add_op = QLineEdit()
+        self.add_alt = QLineEdit()
+        self.add_trans = QLineEdit()
         self.add_button = QPushButton('Add method')
         self.add_button.setFixedWidth(100)
 
@@ -173,11 +189,15 @@ class MethodsTab(QWidget):
         self.add_bg.setPlaceholderText('Background color')
         self.add_fg.setPlaceholderText('Foreground color')
         self.add_op.setPlaceholderText('Operator')
+        self.add_alt.setPlaceholderText('Alternative Name')
+        self.add_trans.setPlaceholderText('Transfer?')
         if network_files.st_mode:
             self.add_name.textChanged.connect(update_bg)
             self.add_bg.setDisabled(True)
             self.add_fg.setDisabled(True)
             self.add_op.setDisabled(True)
+            self.add_alt.setDisabled(True)
+            self.add_trans.setDisabled(True)
             self.add_button.setDisabled(True)
             self.add_fg.setText('white')
             self.add_op.setText('Seacrestica Transports Outpost')
@@ -186,6 +206,8 @@ class MethodsTab(QWidget):
             self.add_bg.textChanged.connect(check_button)
             self.add_fg.textChanged.connect(check_button)
             self.add_op.textChanged.connect(check_button)
+            self.add_alt.textChanged.connect(check_button)
+            self.add_trans.textChanged.connect(check_button)
 
         self.add_button.clicked.connect(self.add_method)
 
@@ -193,6 +215,8 @@ class MethodsTab(QWidget):
         self.add_layout.addWidget(self.add_bg)
         self.add_layout.addWidget(self.add_fg)
         self.add_layout.addWidget(self.add_op)
+        self.add_layout.addWidget(self.add_alt)
+        self.add_layout.addWidget(self.add_trans)
         self.add_layout.addWidget(self.add_button)
 
         self.layout.addWidget(self.add_box)
@@ -252,9 +276,8 @@ class MethodsTab(QWidget):
                 bg_cell = QTableWidgetItem(network_files.get_method_bg_color(name))
                 fg_cell = QTableWidgetItem(network_files.get_method_fg_color(name))
                 operator_cell = QTableWidgetItem(network_files.get_method_op(name))
-                # transfer_checkbox = QCheckBox()
-                # transfer_checkbox.setChecked(name in network_files['transfers'])
-                # transfer_cell = QTableWidgetItem(transfer_checkbox)
+                alt_name_cell = QTableWidgetItem(network_files.get_method_alt_name(name))
+                transfer_cell = QTableWidgetItem(network_files.is_method_transfer(name))
                 if network_files.st_mode:
                     bg_cell.setFlags(bg_cell.flags() & ~Qt.ItemFlag.ItemIsEnabled)
                     fg_cell.setFlags(fg_cell.flags() & ~Qt.ItemFlag.ItemIsEnabled)
@@ -264,7 +287,8 @@ class MethodsTab(QWidget):
                 self.table.setItem(row, 1, bg_cell)
                 self.table.setItem(row, 2, fg_cell)
                 self.table.setItem(row, 3, operator_cell)
-                # self.table.setItem(row, 4, transfer_cell)
+                self.table.setItem(row, 4, alt_name_cell)
+                self.table.setItem(row, 5, transfer_cell)
                 self.table.resizeColumnsToContents()
                 self.table.resizeRowsToContents()
         except Exception as e:
@@ -273,7 +297,6 @@ class MethodsTab(QWidget):
             print(f"[D> An error occurred during table update: {e}")
         finally:
             self.dont_update = False
-
 
 class CloseDialog(QDialog):
     def __init__(self):
@@ -304,7 +327,6 @@ class CloseDialog(QDialog):
         self.cancelled = True
         self.reject()
 
-
 class Application(QMainWindow):
 
     def __init__(self):
@@ -313,7 +335,7 @@ class Application(QMainWindow):
 
         self.setWindowTitle('UVDOT Editor')
         self.create_import_page()
-        self.setMinimumSize(800, 600)
+        self.setMinimumSize(1000, 600)
 
     def create_import_page(self):
         self.only_export_mode = True
@@ -491,8 +513,8 @@ class Application(QMainWindow):
         # Do different options with tabs
         tab_bar = QTabWidget()
         tab_bar.addTab(MethodsTab(), "&Methods")
-        tab_bar.addTab(NodesTab(), "&Nodes")
         tab_bar.addTab(PlacesTab(), "&Places")
+        tab_bar.addTab(RoutesTab(), "&Routes")
 
         title_layout.addWidget(export_button)
         title_layout.addWidget(import_button)
